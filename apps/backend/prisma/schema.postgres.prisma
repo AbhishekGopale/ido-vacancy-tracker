@@ -1,0 +1,184 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  roleId       String
+  role         Role     @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  zone         String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  projectsManaged   Project[] @relation("ProjectPM")
+  vacanciesCreated  Vacancy[] @relation("VacancyCreator")
+  vacanciesAssigned Vacancy[] @relation("VacancyRecruiter")
+
+  @@index([email])
+  @@index([roleId])
+  @@map("users")
+}
+
+model Role {
+  id          String           @id @default(uuid())
+  name        String           @unique
+  description String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  users       User[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(uuid())
+  slug        String           @unique
+  description String?
+  roles       RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model BaseRole {
+  id           String        @id @default(uuid())
+  name         String        @unique
+  description  String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  projectRoles ProjectRole[]
+
+  @@map("base_roles")
+}
+
+model Project {
+  id           String        @id @default(uuid())
+  code         String        @unique
+  name         String
+  pmUserId     String
+  pmUser       User          @relation("ProjectPM", fields: [pmUserId], references: [id])
+  asmEmail     String
+  rsmEmail     String
+  currentSeq   Int           @default(0)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  projectRoles ProjectRole[]
+  vacancies    Vacancy[]
+
+  @@map("projects")
+}
+
+model ProjectRole {
+  id          String    @id @default(uuid())
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  baseRoleId  String
+  baseRole    BaseRole  @relation(fields: [baseRoleId], references: [id], onDelete: Restrict)
+  title       String
+  salary      String?
+  experience  String?
+  description String?
+  asmEmail    String?
+  rsmEmail    String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  vacancies   Vacancy[]
+
+  @@index([projectId])
+  @@index([baseRoleId])
+  @@map("project_roles")
+}
+
+model Vacancy {
+  id                  String                @id @default(uuid())
+  vacancyCode         String?               @unique
+  projectId           String
+  project             Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectRoleId       String?
+  projectRole         ProjectRole?          @relation(fields: [projectRoleId], references: [id], onDelete: SetNull)
+  title               String
+  zone                String
+  area                String
+  salary              String?
+  experience          String?
+  status              String                @default("PENDING_INGEST_REVIEW")
+  createdById         String
+  createdBy           User                  @relation("VacancyCreator", fields: [createdById], references: [id])
+  assignedRecruiterId String?
+  assignedRecruiter   User?                 @relation("VacancyRecruiter", fields: [assignedRecruiterId], references: [id])
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  submissions         CandidateSubmission[]
+
+  @@index([projectId, title, zone, area])
+  @@index([zone])
+  @@index([status])
+  @@map("vacancies")
+}
+
+model CandidateSubmission {
+  id                String          @id @default(uuid())
+  vacancyId         String
+  vacancy           Vacancy         @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
+  fullName          String
+  email             String
+  phone             String
+  resumeId          String?
+  resumeUrl         String?
+  currentLevel      Int             @default(1)
+  status            String          @default("PENDING")
+  rejectionReason   String?
+  rejectionComments String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  audits            ApprovalAudit[]
+
+  @@index([vacancyId])
+  @@index([status])
+  @@map("candidate_submissions")
+}
+
+model ApprovalAudit {
+  id            String              @id @default(uuid())
+  submissionId  String
+  submission    CandidateSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  level         Int
+  reviewerEmail String
+  action        String
+  reason        String?
+  comments      String?
+  createdAt     DateTime            @default(now())
+
+  @@index([submissionId])
+  @@map("approval_audits")
+}
+
+model TokenNonce {
+  nonce        String    @id
+  submissionId String
+  level        Int
+  usedAt       DateTime?
+  expiresAt    DateTime
+
+  @@map("token_nonces")
+}

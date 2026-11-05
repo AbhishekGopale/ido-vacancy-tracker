@@ -1,0 +1,286 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id           String   @id @default(uuid())
+  username     String?  @unique // Login User ID (e.g. rec_west_mumbai, admin, pm_unilever)
+  email        String   @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  roleId       String
+  role         Role     @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  zone         String?  // Zone mapping for Recruiter (e.g. North, South, East, West)
+  area         String?  // Operational Area (e.g. West Mumbai, West ROM, South KN)
+  phone        String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Many-to-Many Project Assignments (PM <-> Projects)
+  projectAssignments ProjectAssignment[]
+  projectsManaged    Project[]           @relation("ProjectPM")
+
+  // Many-to-Many Super Manager Assignments (Super Manager <-> PMs)
+  supervisingPMs     SuperManagerAssignment[] @relation("SuperManagerSupervising")
+  supervisedBySMs    SuperManagerAssignment[] @relation("SuperManagerSupervised")
+
+  vacanciesCreated   Vacancy[] @relation("VacancyCreator")
+  vacanciesAssigned  Vacancy[] @relation("VacancyRecruiter")
+
+  @@index([username])
+  @@index([email])
+  @@index([roleId])
+  @@map("users")
+}
+
+model Role {
+  id          String           @id @default(uuid())
+  name        String           @unique // ADMIN, OWNER, SUPER_MANAGER, PM, RECRUITER
+  description String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  users       User[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(uuid())
+  slug        String           @unique
+  description String?
+  roles       RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model ProjectAssignment {
+  id        String   @id @default(uuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([projectId, userId])
+  @@map("project_assignments")
+}
+
+model SuperManagerAssignment {
+  id             String   @id @default(uuid())
+  superManagerId String
+  superManager   User     @relation("SuperManagerSupervising", fields: [superManagerId], references: [id], onDelete: Cascade)
+  pmUserId       String
+  pmUser         User     @relation("SuperManagerSupervised", fields: [pmUserId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now())
+
+  @@unique([superManagerId, pmUserId])
+  @@map("super_manager_assignments")
+}
+
+model BaseRole {
+  id           String        @id @default(uuid())
+  name         String        @unique // Promoter, Merchandiser, Team Lead
+  description  String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  projectRoles ProjectRole[]
+
+  @@map("base_roles")
+}
+
+model Project {
+  id                 String              @id @default(uuid())
+  code               String              @unique // Project prefix code (e.g. UI, PG, PEP)
+  name               String
+  pmUserId           String?
+  pmUser             User?               @relation("ProjectPM", fields: [pmUserId], references: [id])
+  projectAssignments ProjectAssignment[]
+  asmEmail           String              // Default Level 2 Reviewer Email
+  rsmEmail           String              // Default Level 3 Reviewer Email
+  currentSeq         Int                 @default(0)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  projectRoles       ProjectRole[]
+  vacancies          Vacancy[]
+
+  @@map("projects")
+}
+
+model ProjectRole {
+  id                  String    @id @default(uuid())
+  projectId           String
+  project             Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  baseRoleId          String?
+  baseRole            BaseRole? @relation(fields: [baseRoleId], references: [id], onDelete: SetNull)
+  title               String    // Custom Job Title (e.g. F-Promoter, Retail Merchandiser)
+  salary              String?   // Project Salary / Compensation
+  experience          String?   // Experience level (e.g. 1-2 Years, Entry Level)
+  description         String?   // Detailed description
+  targetDaysToFill    Int       @default(2) // PM Target SLA window in days
+  approvalLevelsCount Int       @default(2) // 1, 2, or 3 levels
+  defaultL1Email      String?
+  defaultL2Email      String?
+  defaultL3Email      String?
+  asmEmail            String?   // Level 2 Reviewer override email alias
+  rsmEmail            String?   // Level 3 Reviewer override email alias
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  vacancies           Vacancy[]
+
+  @@index([projectId])
+  @@map("project_roles")
+}
+
+model Store {
+  id          String    @id @default(uuid())
+  code        String    @unique // e.g. DM-MHV-01, REL-KLY-02
+  name        String    // e.g. Dmart Mahavir, Reliance Kalyan 1
+  chain       String    // DMART, RELIANCE, STAR_BAZAAR, NATURES_BASKET, GENERAL_TRADE
+  line        String?   // Western, Central, Harbour, Metro
+  tradeType   String    @default("MT") // MT (Modern Trade) or GT (General Trade)
+  area        String    // West Mumbai, West ROM, North Delhi, South KN, etc.
+  zone        String    // West, North, South, East
+  city        String?
+  address     String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  vacancies   Vacancy[]
+
+  @@index([chain, tradeType, area])
+  @@index([line])
+  @@index([area])
+  @@map("stores")
+}
+
+model Vacancy {
+  id                  String                @id @default(uuid())
+  vacancyCode         String?               @unique // Auto-generated code (e.g. UI001, UI002)
+  projectId           String
+  project             Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectRoleId       String?
+  projectRole         ProjectRole?          @relation(fields: [projectRoleId], references: [id], onDelete: SetNull)
+  storeId             String?
+  store               Store?                @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  title               String
+  zone                String
+  area                String
+  line                String?               // Western, Central, Harbour
+  tradeType           String                @default("MT") // MT (Modern Trade) or GT (General Trade)
+  manpowerType        String                @default("REGULAR") // REGULAR or TACT (Vacancy Type)
+  requiredPositions   Int                   @default(1)
+  filledPositions     Int                   @default(0)
+  salary              String?
+  experience          String?
+  targetDaysToFill    Int?                  @default(2)
+  targetDueDate       DateTime?
+  approverL1Email     String?               // Area-specific L1 Override
+  approverL2Email     String?               // Area-specific L2 Override
+  approverL3Email     String?               // Area-specific L3 Override
+  status              String                @default("PENDING_INGEST_REVIEW") // PENDING_INGEST_REVIEW, ACTIVE, PENDING_APPROVAL, ON_HOLD, FILLED, CANCELLED, DRAFT_DUPLICATE_FLAG
+  holdReason          String?               // Reason when placed ON_HOLD
+  holdSetById         String?               // User ID of PM/Admin who set the hold
+  holdSetAt           DateTime?             // Timestamp when hold was activated
+  createdById         String
+  createdBy           User                  @relation("VacancyCreator", fields: [createdById], references: [id])
+  assignedRecruiterId String?
+  assignedRecruiter   User?                 @relation("VacancyRecruiter", fields: [assignedRecruiterId], references: [id])
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  submissions         CandidateSubmission[]
+
+  @@index([projectId, title, zone, area])
+  @@index([zone])
+  @@index([area])
+  @@index([status])
+  @@index([storeId])
+  @@index([tradeType])
+  @@index([manpowerType])
+  @@map("vacancies")
+}
+
+model CandidateSubmission {
+  id                String          @id @default(uuid())
+  vacancyId         String
+  vacancy           Vacancy         @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
+  fullName          String
+  email             String?
+  phone             String?
+  resumeId          String?
+  resumeUrl         String?
+  stage             String          @default("PROPOSED") // PROPOSED, INTERVIEW_PENDING, SELECTED, APPROVED, JOINED, REJECTED
+  joinedDate        DateTime?
+  interviewDate     DateTime?
+  currentLevel      Int             @default(1) // 1: PM, 2: ASM, 3: RSM
+  status            String          @default("PENDING") // PENDING, APPROVED, REJECTED
+  rejectionReason   String?
+  rejectionComments String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  audits            ApprovalAudit[]
+
+  @@index([vacancyId])
+  @@index([status])
+  @@index([stage])
+  @@map("candidate_submissions")
+}
+
+model ApprovalAudit {
+  id            String              @id @default(uuid())
+  submissionId  String
+  submission    CandidateSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  level         Int
+  reviewerEmail String
+  action        String              // APPROVED, REJECTED, FORCE_FILLED, CANCELLED
+  reason        String?
+  comments      String?
+  createdAt     DateTime            @default(now())
+
+  @@index([submissionId])
+  @@map("approval_audits")
+}
+
+model TokenNonce {
+  nonce              String    @id
+  submissionId       String
+  level              Int
+  reminderCount      Int       @default(0)
+  lastReminderSentAt DateTime?
+  escalatedAt        DateTime?
+  usedAt             DateTime?
+  expiresAt          DateTime
+
+  @@map("token_nonces")
+}
+
+model UserLoginAudit {
+  id        String   @id @default(uuid())
+  userId    String?
+  userEmail String
+  roleName  String
+  action    String   @default("LOGIN")
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([userEmail])
+  @@index([createdAt])
+  @@map("user_login_audits")
+}
